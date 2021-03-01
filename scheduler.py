@@ -24,11 +24,12 @@ import socket
 import sched
 import threading
 import schedule
+import multiprocessing
 # from threading import Timer
 
 class TVisionScheduler():
    
-    def __init__(self, json_task):
+    def __init__(self, json_task, timeout=30):
         self.task_details = {}
         self.json_task = json_task
         self.current_pid = 0
@@ -40,6 +41,7 @@ class TVisionScheduler():
             'write':self.__writeProcess
             }
         self.stop_event = threading.Event() 
+        self.timeout = timeout
     
     def stopAll(self):
         print("Stopping all!")
@@ -57,10 +59,25 @@ class TVisionScheduler():
 
         task_action = self.task_details["verb"]
         execution_time = self.task_details["time"]
-        schedule.every().day.at(execution_time).do(self.actions[task_action])
+        schedule.every().day.at(execution_time).do(self.__executeTask, task_action)
         while not self.stop_event.is_set():
             schedule.run_pending()
             time.sleep(1)
+    
+    def __executeTask(self, task_action_name):
+        print(f"Thread timeout = {self.timeout}")
+        p = multiprocessing.Process(target=self.actions[task_action_name])
+        p.start()
+        p.join(self.timeout) #if it doesnt finish in 30 secs stop it.
+        if p.is_alive():
+            print("TIMEOUT: Task execution time expired!")
+            try:
+                p.terminate()
+            except:
+                print("Failed to terminate running thread, about to kill it")
+                p.kill()
+            
+            p.join() #just in case
 
     def __isProcessRunningByName(self) -> bool:
         for proc in psutil.process_iter():
@@ -150,7 +167,7 @@ class TVisionScheduler():
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
-        tv_sched = TVisionScheduler(sys.argv[1])
+        tv_sched = TVisionScheduler(sys.argv[1], 10)
         try:
             tv_sched.run() 
         except (KeyboardInterrupt, SystemExit):
