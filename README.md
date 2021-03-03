@@ -19,4 +19,11 @@ In order to test main functions like: start, stop or write, plese run the follow
 
 `scheduler_test.py`
 
+## Pytest execution:
+Command used: ```pytest -rP -v```
+
+Output:
+
+![Test Results](./test-execution.jpeg)
+
 

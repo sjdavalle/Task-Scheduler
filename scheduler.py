@@ -21,30 +21,26 @@ from subprocess import Popen
 import ntpath
 import time
 import socket
-import sched
 import threading
-import schedule
 import multiprocessing
-# from threading import Timer
 
-class TVisionScheduler():
+class Scheduler():
    
     def __init__(self, json_task, timeout=30):
         self.task_details = {}
         self.json_task = json_task
         self.current_pid = 0
         self.pid_from_file = 0
-        self.scheduler = sched.scheduler(time.time, time.sleep)
         self.actions={
             'start':self.__startProcess,
             'stop':self.__stopProcess,
             'write':self.__writeProcess
             }
         self.stop_event = threading.Event() 
+        self.task_completed_event = threading.Event()
         self.timeout = timeout
     
     def stopAll(self):
-        print("Stopping all!")
         self.stop_event.set()
 
     def run(self):
@@ -65,8 +61,9 @@ class TVisionScheduler():
             time.sleep(1)
     
     def __executeTask(self, task_action_name):
-        print(f"Thread timeout = {self.timeout}")
+        self.task_completed_event.clear()
         p = multiprocessing.Process(target=self.actions[task_action_name])
+        p.name = task_action_name
         p.start()
         p.join(self.timeout) #if it doesnt finish in 30 secs stop it.
         if p.is_alive():
@@ -78,11 +75,21 @@ class TVisionScheduler():
                 p.kill()
             
             p.join() #just in case
+        self.task_completed_event.set()
 
-    def __isProcessRunningByName(self) -> bool:
+    def isTaskCompleted(self) -> bool:
+        return self.task_completed_event.is_set()
+    
+    def waitUntilComplete(self):
+        self.task_completed_event.wait()
+
+    def __isProcessRunningByName(self, name=None) -> bool:
         for proc in psutil.process_iter():
             try:
-                program_name = ntpath.basename(self.task_details["program_name"]).lower()
+                if name is not None:
+                    program_name = name.lower()
+                else:
+                    program_name = ntpath.basename(self.task_details["program_name"]).lower()
                 if program_name in proc.name().lower():
                     self.current_pid = proc.pid
                     return True
@@ -149,6 +156,8 @@ class TVisionScheduler():
             else:
                 print(f"ERROR: Process with PID {self.pid_from_file} is NOT running")
                 os.remove(self.task_details['pidfile_name'])
+        else:
+            print("Error reading PID File")
 
     def __writeProcess(self):
         socket_name = self.task_details["socket_name"]
@@ -158,20 +167,25 @@ class TVisionScheduler():
                 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 client.connect(socket_name)
                 client.send(message.encode('utf-8'))
-                print("message sent..")
             except Exception as err:
                 print(f"ERROR connecting to socket - {err}")
         else:
             print("ERROR - Socket does NOT exist")
+    
+    def __del__(self):
+        for thread in threading.enumerate(): 
+            print(thread.name)
 
+    def __exit__(self):
+        self.__del__()
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
-        tv_sched = TVisionScheduler(sys.argv[1], 10)
+        my_sched = Scheduler(sys.argv[1], 10)
         try:
-            tv_sched.run() 
+            my_sched.run() 
         except (KeyboardInterrupt, SystemExit):
-            tv_sched.stopAll()
+            my_sched.stopAll()
             sys.exit()       
     else:
         print("INVALID USAGE! Please specify the file name")
