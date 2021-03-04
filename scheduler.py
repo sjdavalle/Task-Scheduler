@@ -11,8 +11,6 @@ except ImportError:
     print("WARNING: NO module schedule - please run 'pip install psutil' ")
     sys.exit(-1)
 
-import dateutil.parser
-from datetime import datetime
 import json
 import os
 from os import path
@@ -93,12 +91,13 @@ class Scheduler():
                 if program_name in proc.name().lower():
                     self.current_pid = proc.pid
                     return True
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as err:
+                print(f"Exception occurred: {err}")
                 pass
         return False
     
-    def __isProcessRunningByPID(self) -> bool:
-        return psutil.pid_exists(int(self.pid_from_file))
+    def __isProcessRunningByPID(self, PID) -> bool:
+        return psutil.pid_exists(PID)
 
     def __readPIDFile(self) -> bool:
         retVal = False
@@ -131,8 +130,14 @@ class Scheduler():
                 self.__updatePIDFile()
         else:
             try:
-                subprocess.Popen([program_name])
+                p = subprocess.Popen([program_name], shell=True, stdout=None, stderr=None, preexec_fn=os.setpgrp)
+                print(f"Process ID: {p.pid}")
+
                 #validate the process is running and update pid file
+                retries = 5
+                while not self.__isProcessRunningByName() and retries < 5:
+                    time.sleep(1)
+                    
                 if(self.__isProcessRunningByName()):
                     self.__updatePIDFile()
                 else:
@@ -142,7 +147,7 @@ class Scheduler():
 
     def __stopProcess(self):
         if self.__readPIDFile():
-            if(self.__isProcessRunningByPID()):
+            if(self.__isProcessRunningByPID(int(self.pid_from_file))):
                 #TODO: check  matching PID
                 for proc in psutil.process_iter():
                     try:

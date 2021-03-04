@@ -27,3 +27,5 @@ Output:
 ![Test Results](./test-execution.jpeg)
 
 
+# Docker Environment:
+run ```./create_env.s``` to get the container ready only if all tests succeed 
